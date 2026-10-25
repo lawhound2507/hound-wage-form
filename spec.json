@@ -483,11 +483,20 @@
   ],
   [
    "f",
+   "q6.lodging",
+   "숙소나 식사를 제공했나요?",
+   1,
+   "list:숙소+식사/숙소만/식사만/제공 안 함/모름",
+   "제공했으면 아래 질문",
+   "숙소+식사"
+  ],
+  [
+   "f",
    "q6.deduct",
    "월급에서 밥값이나 기숙사비를 빼고 받았어요?",
    1,
    "list:예/아니오/모름",
-   "예면 아래 세 칸",
+   "예면 아래 두 칸",
    "예"
   ],
   [
@@ -507,15 +516,6 @@
    "list:예/아니오/모름",
    "",
    "모름"
-  ],
-  [
-   "f",
-   "q6.lodging",
-   "회사가 기숙사나 밥을 줬어요?",
-   0,
-   "list:기숙사+밥/기숙사만/밥만/안 줌/모름",
-   "",
-   "기숙사+밥"
   ],
   [
    "f",
@@ -989,17 +989,37 @@
    "has": "계좌",
    "empty": true
   },
+  "q6.deduct": {
+   "key": "q6.lodging",
+   "filled": true,
+   "and": {
+    "key": "q6.lodging",
+    "not": "제공 안 함"
+   }
+  },
   "deductAmt": {
    "key": "q6.deduct",
-   "eq": "예"
+   "eq": "예",
+   "and": {
+    "key": "q6.lodging",
+    "filled": true,
+    "and": {
+     "key": "q6.lodging",
+     "not": "제공 안 함"
+    }
+   }
   },
   "q6.deductSign": {
    "key": "q6.deduct",
-   "eq": "예"
-  },
-  "q6.lodging": {
-   "key": "q6.deduct",
-   "eq": "예"
+   "eq": "예",
+   "and": {
+    "key": "q6.lodging",
+    "filled": true,
+    "and": {
+     "key": "q6.lodging",
+     "not": "제공 안 함"
+    }
+   }
   },
   "last3a": {
    "rehire": true
