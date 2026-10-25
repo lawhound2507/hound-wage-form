@@ -140,9 +140,25 @@ select{width:100%;font:inherit;padding:10px;border:1px solid var(--line);border-
   const when = (iso) => { if (!iso) return ''; const t = new Date(iso); return `${t.getMonth() + 1}/${t.getDate()} ${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`; };
 
   // ---------------- 화면: 쓰기
+  // 퇴직 전 3개월 급여의 달은 마지막 일한 날로, 1차는 쉰 기간 '퇴사 후 재입사' 시작 전날로 저절로 (2026-10-25 팀장님)
+  //   날짜가 바뀌면 줄도 다시 맞추고, 같은 달 줄에 쓴 금액·대략/모름·메모는 그대로
+  let AUTO = {};
+  const ymBack = (iso, n) => { const m = /^(\d{4})-(\d{2})-\d{2}$/.exec(iso || ''); return m ? Array.from({ length: n }, (_, k) => new Date(Date.UTC(+m[1], +m[2] - 1 - (n - 1 - k), 1)).toISOString().slice(0, 7)) : null; };
+  const dayBefore = (iso) => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() - 1); return d.toISOString().slice(0, 10); };
+  function syncLast3(D) {
+    const g = (D['t.gap'] || []).find((r) => r && r[2] === '퇴사 후 재입사' && /^\d{4}-\d{2}-\d{2}$/.test(r[0] || ''));
+    const want = { last3: ymBack(D.lastDate, 3), last3a: g ? ymBack(dayBefore(g[0]), 3) : null };
+    for (const [tag, ms] of Object.entries(want)) {
+      if (!ms) continue;
+      const old = D['t.' + tag] || [];
+      D['t.' + tag] = ms.map((ym) => { const o = old.find((r) => r && r[0] === ym); const row = o ? [...o] : []; row[0] = ym; return row; });
+    }
+    return want;
+  }
   function edit(id) {
     cur = { id, data: drafts[id].data };
     const D = cur.data;
+    AUTO = syncLast3(D);
     let h = '', open = false;
     const close = () => { if (open) { h += '</div>'; open = false; } };
     const show = shownMap(D);
@@ -174,12 +190,13 @@ select{width:100%;font:inherit;padding:10px;border:1px solid var(--line);border-
       const v = (cur.data['t.extra'] || []).map((r) => r[0]).filter(Boolean).join('\n');
       return `<div class="f"><div class="lab"><span>추가로 알려 줄 것</span></div><textarea data-k="extraText" style="min-height:120px" placeholder="한 줄에 하나씩">${esc(v)}</textarea></div>`;
     }
-    const rows = rowsOf(tag, nrows);
-    return `<div class="f" data-tbl="${esc(tag)}"><div class="lab"><span>${esc(title)}</span>${qbtn(help)}</div>${helpDiv(help)}
-      ${rows.map((r, i) => rowHtml(tag, heads, r, i)).join('')}
-      <button type="button" class="btn sm" data-add="${esc(tag)}" style="margin-top:8px">+ 줄 추가</button></div>`;
+    const rows = rowsOf(tag, nrows), auto = !!AUTO[tag];
+    const note = /^last3/.test(tag) ? `<div class="muted" style="margin-bottom:6px">${auto ? '달은 저절로 채워져요. 받은 돈만 써 주세요' : tag === 'last3' ? '3번 「마지막 일한 날」을 쓰면 달이 저절로 채워져요' : ''}</div>` : '';
+    return `<div class="f" data-tbl="${esc(tag)}"><div class="lab"><span>${esc(title)}${REQT.includes(tag) && /^last3/.test(tag) ? '<span class="req">*</span>' : ''}</span>${qbtn(help)}</div>${helpDiv(help)}${note}
+      ${rows.map((r, i) => rowHtml(tag, heads, r, i, auto)).join('')}
+      ${auto ? '' : `<button type="button" class="btn sm" data-add="${esc(tag)}" style="margin-top:8px">+ 줄 추가</button>`}</div>`;
   }
-  function rowHtml(tag, heads, r, i) {
+  function rowHtml(tag, heads, r, i, auto) {
     let body;
     if (tag === 'pat') {  // 요일 7칸 O + 출근·퇴근·쉬는 시간
       // 출근·퇴근은 15분 단위 목록, 쉬는 시간은 고르기 (2026-10-25 팀장님)
@@ -192,11 +209,12 @@ select{width:100%;font:inherit;padding:10px;border:1px solid var(--line);border-
         if (/^last3/.test(tag) && kind === 'money' && r[2] === '모름') return '';  // 모름이면 금액 칸 닫음
         if (kind.startsWith('list:')) return `<div class="cell" style="margin-top:6px">${esc(hd)}${seg(`t|${tag}|${i}|${j}`, kind.slice(5).split('/'), r[j] || '')}</div>`;
         const t = kind === 'date' ? 'date' : kind === 'month' ? 'month' : 'text', im = kind === 'money' ? ' inputmode="numeric" data-num="1" placeholder="숫자만"' : kind === 'text' && /월/.test(hd) ? ' placeholder="2026-03"' : '';  // month = 연·월 고르기(값 '2026-03', 2026-10-25 팀장님)
+        if (auto && kind === 'month') return `<div class="cell" style="margin-top:2px"><b style="color:var(--ink)">${esc(String(r[j] || '').replace(/^(\d{4})-0?(\d+)$/, '$1년 $2월'))}</b></div>`;  // 저절로 정한 달은 보기만
         const inp = `<input type="${t}" data-t="${tag}|${i}|${j}" value="${esc(kind === 'money' ? cm(r[j]) : r[j] || '')}"${im}>`;
         return `<label class="cell" style="margin-top:6px">${esc(hd)}${kind === 'money' && /^last3/.test(tag) && r[2] === '대략' ? ' (대략)' : ''}${kind === 'money' ? `<div class="won">${inp}</div>` : inp}</label>`;
       }).join('');
     }
-    return `<div class="row"><div class="rh"><span>${i + 1}</span><button type="button" class="btn sm" data-delrow="${esc(tag)}|${i}">줄 빼기</button></div>${body}</div>`;
+    return `<div class="row"><div class="rh"><span>${i + 1}</span>${auto ? '' : `<button type="button" class="btn sm" data-delrow="${esc(tag)}|${i}">줄 빼기</button>`}</div>${body}</div>`;
   }
 
   // ---------------- 입력 → 임시저장 (적는 대로)
@@ -229,7 +247,10 @@ select{width:100%;font:inherit;padding:10px;border:1px solid var(--line);border-
     if (el.dataset.t) { const [tag, i, j] = el.dataset.t.split('|'); rowsOf(tag)[+i][+j] = val; later(); }
   });
   // 다른 칸을 열고 닫는 글 칸(같이 일한 사람 수·약속한 금액)은 다 쓰고 나왔을 때 다시 그림 (쓰는 중에 칸이 움직이지 않게)
-  document.addEventListener('change', (e) => { if (cur && e.target.dataset.k && CONDKEYS().has(e.target.dataset.k)) { save(); redraw(); } });
+  document.addEventListener('change', (e) => {  // 마지막 일한 날·쉰 기간 시작일을 고치면 퇴직 전 3개월 달도 다시
+    const k = e.target.dataset.k, t = e.target.dataset.t || '';
+    if (cur && ((k && (CONDKEYS().has(k) || k === 'lastDate')) || /^gap\|\d+\|0$/.test(t))) { save(); redraw(); }
+  });
   document.addEventListener('click', (e) => {
     const b = e.target.closest('button'); if (!b) return;
     if (b.dataset.q !== undefined) { const h = b.closest('.f').querySelector('.help'); if (h) h.classList.toggle('on'); return; }
