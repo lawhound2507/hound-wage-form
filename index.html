@@ -1,0 +1,362 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#17171a">
+<title>임금체불 직원 작성</title>
+<!-- 하운드 임금체불 직원 작성 화면 (2026-10-25 팀장님): 휴대폰에서 질문에 답하고 [엑셀로 저장] → 그 엑셀을 카톡으로 팀장에게.
+     질문 목록 = spec.json (tools/make_worker_template.py가 엑셀 양식과 함께 만듦 — 질문은 거기서만 고침).
+     적은 내용은 이 휴대폰 안(localStorage)에만 임시저장, 서버로 보내지 않음. 엑셀은 v6 양식과 같은 칸(숨긴 A열 키)이라 임금체불 프로그램이 그대로 불러옴. -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+:root{--ink:#17171a;--sub:#5a6476;--line:#d9dde4;--bg:#f6f7f9;--card:#fff;--pri:#1f3864;--pri2:#e8eef8;--req:#fff0b3;--warn:#b5630a;--r:4px}
+*{box-sizing:border-box}html{-webkit-text-size-adjust:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 -apple-system,"Malgun Gothic","Apple SD Gothic Neo",sans-serif;padding-bottom:84px}
+header{position:sticky;top:0;z-index:5;background:var(--ink);color:#fff;padding:10px 16px;display:flex;align-items:center;gap:10px}
+header b{font-size:16px}header small{color:#c9cdd6;font-size:12px;margin-left:auto;white-space:nowrap}
+main{max-width:640px;margin:0 auto;padding:12px 16px}
+h2{font-size:15px;margin:22px 0 8px;padding:6px 10px;background:var(--ink);color:#fff;border-radius:var(--r)}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:12px;margin:8px 0}
+.f{margin:0 0 14px}.f:last-child{margin-bottom:0}
+.lab{display:flex;align-items:flex-start;gap:6px;font-weight:700;font-size:15px;margin-bottom:6px}
+.lab .req{color:#c00000}.q{border:1px solid var(--line);background:#fff;color:var(--sub);border-radius:50%;width:22px;height:22px;font-size:12px;flex:none;padding:0}
+.help{display:none;color:var(--sub);font-size:13px;margin:-2px 0 6px;white-space:pre-line}.help.on{display:block}
+input,textarea{width:100%;font:inherit;padding:10px;border:1px solid var(--line);border-radius:var(--r);background:#fff;color:var(--ink)}
+input.req,textarea.req{background:#fffbea}
+textarea{min-height:84px;resize:vertical}
+.seg{display:flex;flex-wrap:wrap;gap:6px}.seg button{border:1px solid var(--line);background:#fff;border-radius:var(--r);padding:9px 12px;font:inherit;font-size:15px;color:var(--ink)}
+.seg button.on{background:var(--pri);border-color:var(--pri);color:#fff;font-weight:700}
+.btn{border:1px solid var(--line);background:#fff;border-radius:var(--r);padding:11px 14px;font:inherit;font-weight:700;color:var(--ink)}
+.btn.pri{background:var(--pri);border-color:var(--pri);color:#fff}.btn.sm{padding:7px 10px;font-size:14px;font-weight:600}
+.row{border-top:1px dashed var(--line);padding-top:10px;margin-top:10px}.row:first-of-type{border-top:0;margin-top:0;padding-top:0}
+.row .rh{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:var(--sub);margin-bottom:6px}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}.grid2 label,.cell{display:block;font-size:13px;color:var(--sub)}
+.days button{min-width:40px;padding:8px 0}
+.won{position:relative}.won input{padding-right:34px}.won::after{content:'원';position:absolute;right:10px;top:50%;transform:translateY(-50%);color:var(--sub);pointer-events:none}
+.rrn{display:flex;align-items:center;gap:6px}.rrn input{flex:1;min-width:0}
+select{width:100%;font:inherit;padding:10px;border:1px solid var(--line);border-radius:var(--r);background:#fff;color:var(--ink)}
+.bar{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid var(--line);padding:10px 16px calc(10px + env(safe-area-inset-bottom));display:flex;gap:8px;justify-content:center;z-index:5}
+.bar .btn{flex:1;max-width:300px}
+.list .it{display:flex;align-items:center;gap:10px;padding:12px;border:1px solid var(--line);border-radius:var(--r);background:#fff;margin:8px 0}
+.list .it div{flex:1;min-width:0}.list .it b{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.list .it small{color:var(--sub)}
+.muted{color:var(--sub);font-size:13px}.saved{color:#2e7d32}
+.toast{position:fixed;left:50%;bottom:92px;transform:translateX(-50%);background:var(--ink);color:#fff;padding:10px 14px;border-radius:var(--r);font-size:14px;max-width:90vw;display:none;z-index:9}
+</style>
+</head>
+<body>
+<header><b>임금체불 작성</b><small id="st"></small></header>
+<main id="app"><p class="muted">불러오는 중…</p></main>
+<div class="bar" id="bar"></div>
+<div class="toast" id="toast"></div>
+<script>
+(() => {
+  'use strict';
+  const STAFF = ['찐티닌장', '이설'];  // 작성자 고르기 (직원이 바뀌면 여기)
+  const KEY = 'hwf.drafts.v1', KSTAFF = 'hwf.staff';
+  const $ = (s, el = document) => el.querySelector(s);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const store = { get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch (e) { return d; } }, set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } } };
+  const toast = (t, ms = 2600) => { const el = $('#toast'); el.textContent = t; el.style.display = 'block'; clearTimeout(toast.t); toast.t = setTimeout(() => (el.style.display = 'none'), ms); };
+  let SPEC = null, MARK = 'HU-W6', DOCS = [], DOC_HELP = {}, COND = {}, FREE = [], PROWS = {}, REQT = [];
+  const cm = (v) => { const d = String(v ?? '').replace(/[^\d]/g, ''); return d ? Number(d).toLocaleString('ko-KR') : ''; };  // 금액 칸 표시 '2,500,000' (저장은 숫자만)
+  // 답에 따라 칸·구역을 열고 닫음 (spec.json cond, 2026-10-25 팀장님) · 숨긴 칸은 지우지 않고 엑셀에도 안 넣음
+  const secKey = (title) => 'sec:' + String(title).split('.')[0].trim();
+  function condOk(c, D) {
+    if (!c) return true;
+    let ok = true;
+    if (c.rehire) ok = (D['t.gap'] || []).some((r) => r && r[2] === '퇴사 후 재입사');
+    else {
+      const v = String(D[c.key] ?? '').trim();
+      if ('eq' in c) ok = v === c.eq;
+      if ('not' in c) ok = v !== c.not;
+      if ('has' in c) ok = v.includes(c.has) || (!!c.empty && !v);
+      if (c.filled) ok = !!v;
+      if ('min' in c) ok = !v || Number(v.replace(/[^\d]/g, '')) >= c.min;
+    }
+    return ok && (!c.and || condOk(c.and, D));
+  }
+  // 칸마다 보이는지: 구역 조건 + 칸 조건
+  function shownMap(D) {
+    const m = {};
+    let sec = true;
+    for (const it of SPEC) {
+      if (it[0] === 'sec') { sec = condOk(COND[secKey(it[1])], D); m['sec|' + it[1]] = sec; continue; }
+      m[it[1]] = sec && condOk(COND[it[1]], D);
+    }
+    return m;
+  }
+  const CONDKEYS = () => new Set(Object.values(COND).flatMap((c) => [c.key, c.and && c.and.key]).filter(Boolean));
+  let drafts = store.get(KEY, {}), cur = null;  // cur = {id, data:{필드키: 값, '표.태그': [[칸들]]}}
+
+  // 표의 칸 → 엑셀 열 (C부터 칸 폭만큼, 양식과 같음: 쉰 기간 C·F·I·K, 마지막 3달 C·G·K, 요일 C~I·J·K·L, 자료 C·E)
+  const LET = 'ABCDEFGHIJKLM';
+  const colsOf = (heads) => { let c = 3; return heads.map(([, , span]) => { const L = LET[c - 1]; c += span; return L; }); };
+  const rowsOf = (tag, nrows) => (cur.data['t.' + tag] = cur.data['t.' + tag] || Array.from({ length: PROWS[tag] || nrows || 1 }, () => []));  // 휴대폰은 1줄로 시작하는 표가 있음
+  const req = (imp) => (imp === 2 ? '<span class="req">*</span>' : '');
+  const qbtn = (help) => (help ? `<button type="button" class="q" data-q>?</button>` : '');
+  const helpDiv = (help) => (help ? `<div class="help">${esc(help)}</div>` : '');
+
+  function seg(name, opts, val, free) {
+    const own = free && val && !opts.includes(val);  // 목록에 없는 값 = 직접 쓴 것
+    return `<div class="seg" data-seg="${esc(name)}">${opts.map((o) => `<button type="button" data-v="${esc(o)}" class="${val === o ? 'on' : ''}">${esc(o)}</button>`).join('')}${free ? `<button type="button" data-v="__own" class="${own ? 'on' : ''}">직접 쓰기</button>` : ''}</div>`
+      + (own ? `<input data-k="${esc(name)}" value="${esc(String(val).trim())}" style="margin-top:6px" placeholder="직접 쓰기">` : '');
+  }
+  function inputFor(kind, name, val, imp, help) {
+    const cls = imp === 2 ? 'req' : '';
+    if (kind.startsWith('list:')) return seg(name, kind.slice(5).split('/'), val, FREE.includes(name));
+    if (kind === 'rrn') {  // 외국인등록번호 앞칸 6 · 뒷칸 7 (보통 자판, 숫자만 남김) → '123456-1234567'
+      const [a, b] = String(val || '').replace(/[^\d-]/g, '').split('-');
+      return `<div class="rrn"><input data-rrn="${esc(name)}|0" value="${esc(a || '')}" maxlength="6" autocomplete="off" class="${cls}" placeholder="앞 6자리"><span>-</span><input data-rrn="${esc(name)}|1" value="${esc(b || '')}" maxlength="7" autocomplete="off" class="${cls}" placeholder="뒤 7자리"></div>`;
+    }
+    const ph = help ? ` placeholder="${esc(help)}"` : '';  // 짧은 안내는 칸 안 흐린 글씨로 (예: 한국식 발음으로 · 예) 응우옌홍선)
+    if (kind === 'long') return `<textarea data-k="${esc(name)}" class="${cls}"${ph}>${esc(val)}</textarea>`;
+    const t = kind === 'date' ? 'date' : kind === 'time' ? 'time' : 'text';
+    const im = kind === 'money' || kind === 'num' ? ' inputmode="numeric" data-num="1"' : kind === 'text' && /전화|phone|Tel/i.test(name) ? ' inputmode="tel"' : '';
+    const inp = `<input type="${t}" data-k="${esc(name)}" value="${esc(kind === 'money' ? cm(val) : val)}" class="${cls}"${im}${ph || (kind === 'money' ? ' placeholder="숫자만"' : '')}>`;
+    return kind === 'money' ? `<div class="won">${inp}</div>` : inp;
+  }
+  function staffField(val) {
+    return `<div class="f"><div class="lab">작성자 <span class="req">*</span></div>${seg('staff', [...STAFF, '직접 입력'], STAFF.includes(val) ? val : val ? '직접 입력' : '')}
+      ${val && !STAFF.includes(val) ? `<input data-k="staff" value="${esc(val)}" style="margin-top:6px" placeholder="이름">` : ''}</div>`;
+  }
+
+  // ---------------- 화면: 목록
+  function home() {
+    cur = null;
+    const list = Object.entries(drafts).sort((a, b) => (b[1].at || '').localeCompare(a[1].at || ''));
+    $('#st').textContent = '이 휴대폰에만 저장';
+    $('#app').innerHTML = `
+      <div class="card"><div class="lab">작성자</div>${seg('homeStaff', STAFF, store.get(KSTAFF, ''))}<p class="muted" style="margin:6px 0 0">한 번 고르면 이 휴대폰이 기억해요</p></div>
+      <h2>작성 중인 것</h2>
+      <div class="list">${list.map(([id, d]) => `<div class="it"><div><b>${esc(nameOf(d.data) || '(이름 없음)')}</b><small>${esc(when(d.at))} · ${d.done ? '엑셀 저장함' : '작성 중'}</small></div>
+        <button class="btn sm" data-open="${esc(id)}">이어 쓰기</button><button class="btn sm" data-del="${esc(id)}" aria-label="지우기">✕</button></div>`).join('') || '<p class="muted">아직 없어요</p>'}</div>
+      <div class="card"><div class="lab">다른 휴대폰에서 쓰던 것</div><p class="muted" style="margin:0 0 8px">저장해 둔 엑셀을 열면 이어서 쓸 수 있어요</p><label class="btn sm" style="display:inline-block">엑셀 열기<input type="file" accept=".xlsx" id="imp" hidden></label></div>`;
+    $('#bar').innerHTML = `<button class="btn pri" id="new">+ 새로 쓰기</button>`;
+    $('#new').onclick = () => { const id = 'd' + Date.now().toString(36); drafts[id] = { at: new Date().toISOString(), data: { staff: store.get(KSTAFF, '') } }; save(); edit(id); };
+    $('#imp').onchange = (e) => e.target.files[0] && importXlsx(e.target.files[0]);
+  }
+  const nameOf = (d) => [d.nameKr, d.nameEn].filter(Boolean).join(' · ');
+  const when = (iso) => { if (!iso) return ''; const t = new Date(iso); return `${t.getMonth() + 1}/${t.getDate()} ${String(t.getHours()).padStart(2, '0')}:${String(t.getMinutes()).padStart(2, '0')}`; };
+
+  // ---------------- 화면: 쓰기
+  function edit(id) {
+    cur = { id, data: drafts[id].data };
+    const D = cur.data;
+    let h = '', open = false;
+    const close = () => { if (open) { h += '</div>'; open = false; } };
+    const show = shownMap(D);
+    for (const it of SPEC) {
+      if (it[0] === 'sec') { close(); if (!show['sec|' + it[1]]) continue; h += `<h2>${esc(it[1])}</h2>${it[2] ? `<p class="muted" style="margin:-2px 0 6px">${esc(it[2])}</p>` : ''}<div class="card">`; open = true; continue; }
+      if (!show[it[1]]) continue;  // 답에 따라 닫힌 칸·구역
+      if (!open) { h += '<div class="card">'; open = true; }
+      if (it[0] === 'f') {
+        const [, key, label, imp, kind, help] = it;
+        if (key === 'staff') { h += staffField(D.staff || ''); continue; }
+        const inPh = !kind.startsWith('list:') && kind !== 'date' && kind !== 'time';  // 글 칸은 안내를 칸 안 흐린 글씨로, 고르는 칸·날짜는 '?'로
+        h += `<div class="f"><div class="lab"><span>${esc(label)}${req(imp)}</span>${inPh ? '' : qbtn(help)}</div>${inPh ? '' : helpDiv(help)}${inputFor(kind, key, D[key] ?? '', imp, inPh ? help : '')}</div>`;
+      } else h += tableHtml(it);
+    }
+    close();
+    $('#app').innerHTML = h;
+    $('#bar').innerHTML = `<button class="btn" id="back">목록</button><button class="btn pri" id="xls">엑셀로 저장</button>`;
+    $('#back').onclick = () => { save(); home(); };
+    $('#xls').onclick = exportXlsx;
+    $('#st').textContent = '저장됨 ' + when(drafts[id].at);
+    scrollTo(0, 0);
+  }
+  function tableHtml(it) {
+    const [, tag, title, heads, nrows, help] = it;
+    if (tag === 'doc') {  // 보낸 것만 누르기 (2026-10-25 팀장님: 요일 고르듯) · 메모는 아래 '자료 메모' 칸 하나
+      return `<div class="f"><div class="lab"><span>보낸 자료</span></div><div class="muted" style="margin-bottom:6px">보낸 것만 눌러 주세요</div><div class="seg">${DOCS.map((d) => `<button type="button" data-doc="${esc(d)}" class="${(cur.data['doc.' + d] || [])[0] === 'O' ? 'on' : ''}">${esc(d)}</button>`).join('')}</div>${Object.entries(DOC_HELP).map(([d, h]) => `<p class="muted" style="margin:6px 0 0">${esc(d)}: ${esc(h)}</p>`).join('')}</div>`;
+    }
+    if (tag === 'extra') {
+      const v = (cur.data['t.extra'] || []).map((r) => r[0]).filter(Boolean).join('\n');
+      return `<div class="f"><div class="lab"><span>추가로 알려 줄 것</span></div><textarea data-k="extraText" style="min-height:120px" placeholder="한 줄에 하나씩">${esc(v)}</textarea></div>`;
+    }
+    const rows = rowsOf(tag, nrows);
+    return `<div class="f" data-tbl="${esc(tag)}"><div class="lab"><span>${esc(title)}</span>${qbtn(help)}</div>${helpDiv(help)}
+      ${rows.map((r, i) => rowHtml(tag, heads, r, i)).join('')}
+      <button type="button" class="btn sm" data-add="${esc(tag)}" style="margin-top:8px">+ 줄 추가</button></div>`;
+  }
+  function rowHtml(tag, heads, r, i) {
+    let body;
+    if (tag === 'pat') {  // 요일 7칸 O + 출근·퇴근·쉬는 시간
+      // 출근·퇴근은 15분 단위 목록, 쉬는 시간은 고르기 (2026-10-25 팀장님)
+      const tOpt = (v) => { const T = Array.from({ length: 96 }, (_, k) => `${String(Math.floor(k / 4)).padStart(2, '0')}:${String((k % 4) * 15).padStart(2, '0')}`); return `<option value="">선택</option>${v && !T.includes(v) ? `<option selected>${esc(v)}</option>` : ''}${T.map((t) => `<option${t === v ? ' selected' : ''}>${t}</option>`).join('')}`; };
+      body = `<div class="muted" style="margin-bottom:4px">일한 요일을 모두 눌러 주세요</div><div class="seg days" data-days="${i}">${heads.slice(0, 7).map(([d], j) => `<button type="button" data-j="${j}" class="${r[j] === 'O' ? 'on' : ''}">${esc(d)}</button>`).join('')}</div>
+        <div class="grid2" style="margin-top:8px"><label>출근<select data-t="pat|${i}|7">${tOpt(r[7] || '')}</select></label><label>퇴근<select data-t="pat|${i}|8">${tOpt(r[8] || '')}</select></label></div>
+        <div class="cell" style="margin-top:6px">쉬는 시간${seg(`t|pat|${i}|9`, heads[9][1].slice(5).split('/'), r[9] || '')}</div>`;
+    } else {
+      body = heads.map(([hd, kind], j) => {
+        if (/^last3/.test(tag) && kind === 'money' && r[2] === '모름') return '';  // 모름이면 금액 칸 닫음
+        if (kind.startsWith('list:')) return `<div class="cell" style="margin-top:6px">${esc(hd)}${seg(`t|${tag}|${i}|${j}`, kind.slice(5).split('/'), r[j] || '')}</div>`;
+        const t = kind === 'date' ? 'date' : kind === 'month' ? 'month' : 'text', im = kind === 'money' ? ' inputmode="numeric" data-num="1" placeholder="숫자만"' : kind === 'text' && /월/.test(hd) ? ' placeholder="2026-03"' : '';  // month = 연·월 고르기(값 '2026-03', 2026-10-25 팀장님)
+        const inp = `<input type="${t}" data-t="${tag}|${i}|${j}" value="${esc(kind === 'money' ? cm(r[j]) : r[j] || '')}"${im}>`;
+        return `<label class="cell" style="margin-top:6px">${esc(hd)}${kind === 'money' && /^last3/.test(tag) && r[2] === '대략' ? ' (대략)' : ''}${kind === 'money' ? `<div class="won">${inp}</div>` : inp}</label>`;
+      }).join('');
+    }
+    return `<div class="row"><div class="rh"><span>${i + 1}</span><button type="button" class="btn sm" data-delrow="${esc(tag)}|${i}">줄 빼기</button></div>${body}</div>`;
+  }
+
+  // ---------------- 입력 → 임시저장 (적는 대로)
+  function save() {
+    if (cur) { drafts[cur.id].data = cur.data; drafts[cur.id].at = new Date().toISOString(); }
+    const ok = store.set(KEY, drafts);
+    if (cur) $('#st').innerHTML = ok ? `<span class="saved">저장됨 ${when(drafts[cur.id].at)}</span>` : '임시저장 안 됨 (엑셀로 저장해 두세요)';
+  }
+  let t0;
+  const later = () => { clearTimeout(t0); t0 = setTimeout(save, 400); };
+  document.addEventListener('input', (e) => {
+    const el = e.target;
+    if (!cur) return;
+    if (el.dataset.k === 'extraText') { cur.data['t.extra'] = el.value.split('\n').map((x) => [x]); return later(); }
+    let val = el.value;
+    if (el.dataset.num) { val = el.value.replace(/[^\d]/g, ''); const show = el.closest('.won') ? cm(val) : val; if (show !== el.value) el.value = show; }  // 금액·숫자 칸은 숫자만 (금액은 쉼표 붙여 보임)
+    if (el.dataset.rrn) {  // 등록번호 두 칸 → 한 값, 앞칸 6자리면 뒷칸으로
+      const [k, j] = el.dataset.rrn.split('|'), d = el.value.replace(/[^\d]/g, '');
+      if (d !== el.value) el.value = d;
+      const box = el.closest('.rrn').querySelectorAll('input');
+      cur.data[k] = box[0].value + (box[1].value ? '-' + box[1].value : '');
+      if (j === '0' && d.length >= 6 && e.inputType !== 'deleteContentBackward') box[1].focus();
+      return later();
+    }
+    if (el.dataset.k) {
+      const [k, j] = el.dataset.k.split('|');
+      if (j !== undefined) { const a = cur.data[k] = cur.data[k] || []; a[+j] = val; } else cur.data[k] = val;
+      return later();
+    }
+    if (el.dataset.t) { const [tag, i, j] = el.dataset.t.split('|'); rowsOf(tag)[+i][+j] = val; later(); }
+  });
+  // 다른 칸을 열고 닫는 글 칸(같이 일한 사람 수·약속한 금액)은 다 쓰고 나왔을 때 다시 그림 (쓰는 중에 칸이 움직이지 않게)
+  document.addEventListener('change', (e) => { if (cur && e.target.dataset.k && CONDKEYS().has(e.target.dataset.k)) { save(); redraw(); } });
+  document.addEventListener('click', (e) => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.q !== undefined) { const h = b.closest('.f').querySelector('.help'); if (h) h.classList.toggle('on'); return; }
+    if (b.dataset.open) return edit(b.dataset.open);
+    if (b.dataset.del) { const d = drafts[b.dataset.del]; if (confirm(`'${nameOf(d.data) || '이름 없음'}' 작성 내용을 이 휴대폰에서 지울까요?`)) { delete drafts[b.dataset.del]; store.set(KEY, drafts); home(); } return; }
+    const sg = b.closest('[data-seg]');
+    if (sg && b.dataset.v !== undefined) {
+      const name = sg.dataset.seg, on = !b.classList.contains('on');
+      sg.querySelectorAll('button').forEach((x) => x.classList.remove('on')); if (on) b.classList.add('on');
+      const v = on ? b.dataset.v : '';
+      if (name === 'homeStaff') { store.set(KSTAFF, v); return; }
+      if (!cur) return;
+      if (name === 'staff') { cur.data.staff = v === '직접 입력' ? ' ' : v; if (v) store.set(KSTAFF, v === '직접 입력' ? '' : v); save(); return edit(cur.id); }
+      const p = name.split('|');
+      if (v === '__own') { cur.data[name] = ' '; save(); return redraw(); }  // 직접 쓰기 → 글 칸 열기
+      if (p[0] === 't') { rowsOf(p[1])[+p[2]][+p[3]] = v; if (/^last3/.test(p[1]) && v === '모름') rowsOf(p[1])[+p[2]][1] = ''; }
+      else if (p.length === 2) { const a = cur.data[p[0]] = cur.data[p[0]] || []; a[+p[1]] = v; }
+      else cur.data[name] = v;
+      save();
+      if (CONDKEYS().has(name) || (p[0] === 't' && (p[1] === 'gap' || /^last3/.test(p[1])))) redraw();  // 이 답으로 열리고 닫히는 칸이 있으면
+      return;
+    }
+    if (b.dataset.doc && cur) { const k = 'doc.' + b.dataset.doc, on = !b.classList.contains('on'); cur.data[k] = on ? ['O', ''] : ['', '']; b.classList.toggle('on', on); return save(); }
+    const dy = b.closest('[data-days]');
+    if (dy && cur) { const r = rowsOf('pat')[+dy.dataset.days], j = +b.dataset.j; r[j] = r[j] === 'O' ? '' : 'O'; b.classList.toggle('on'); return save(); }
+    if (b.dataset.add) { rowsOf(b.dataset.add).push([]); save(); return redraw(); }
+    if (b.dataset.delrow) { const [tag, i] = b.dataset.delrow.split('|'), rows = rowsOf(tag); if (rows[+i].some(Boolean) && !confirm('이 줄을 뺄까요?')) return; rows.splice(+i, 1); if (!rows.length) rows.push([]); save(); return redraw(); }
+    if (b.dataset.v === '__own') return;
+  });
+  const redraw = () => { const y = scrollY; edit(cur.id); scrollTo(0, y); };
+
+  // ---------------- 엑셀 (v6 양식과 같은 칸: A1 표시, 숨긴 A열 = 칸 이름, 값은 C열부터)
+  function toSheet(D) {
+    const ws = {}, put = (addr, v) => { if (v === undefined || v === null || v === '') return; const n = typeof v === 'number' ? v : null; ws[addr] = n !== null ? { t: 'n', v: n } : { t: 's', v: String(v) }; };
+    put('A1', MARK); put('B1', '임금체불 · 직원 작성 (휴대폰)');
+    let r = 3;
+    const show = shownMap(D);
+    const num = (kind, v) => (kind === 'money' || kind === 'num') && /^[\d,\s]+$/.test(String(v || '')) ? Number(String(v).replace(/[,\s]/g, '')) : v;
+    for (const it of SPEC) {
+      if (it[0] === 'sec') { put('B' + r, it[1]); r++; continue; }
+      if (!show[it[1]]) continue;  // 닫힌 칸은 엑셀에 넣지 않음
+      if (it[0] === 'f') { const [, key, label, , kind] = it; put('A' + r, key); put('B' + r, label); put('C' + r, num(kind, String(D[key] ?? '').trim())); r++; continue; }
+      const [, tag, title, heads] = it, cols = colsOf(heads);
+      if (tag === 'doc') { for (const d of DOCS) { const v = D['doc.' + d] || []; put('A' + r, 'doc.' + d); put('B' + r, d); put('C' + r, v[0] === 'O' ? 'O' : 'X'); put('E' + r, v[1]); r++; } continue; }
+      const rows = (D['t.' + tag] || []).filter((x) => x && x.some((y) => String(y || '').trim()));
+      put('B' + r, title || '추가내용'); r++;
+      rows.forEach((row, i) => { put('A' + r, `${tag}.${i + 1}`); put('B' + r, String(i + 1)); heads.forEach(([, kind], j) => put(cols[j] + r, num(kind, row[j]))); r++; });
+    }
+    ws['!ref'] = `A1:M${r}`;
+    return ws;
+  }
+  function exportXlsx() {
+    save();
+    const D = cur.data, show = shownMap(D), emp = String(D.employees || '').trim();
+    // 꼭 쓸 칸: 닫힌 칸은 빼고, 연차·연장(q.)은 사람 수를 적었을 때만 (5명 미만이면 구역이 닫힘)
+    const miss = SPEC.filter((it) => it[0] === 'f' && it[3] === 2 && show[it[1]] && !(/^q\./.test(it[1]) && !emp) && !String(it[1] === 'staff' ? D.staff || '' : D[it[1]] || '').trim()).map((it) => it[2]);
+    for (const it of SPEC) {  // 꼭 쓸 표: 한 줄 이상 · 퇴직 전 3개월은 몇 월 + 금액(모름이면 금액 없어도 됨) · 일한 시간은 요일·출근·퇴근
+      if (it[0] !== 'tbl' || !REQT.includes(it[1]) || !show[it[1]]) continue;
+      const rows = (D['t.' + it[1]] || []).filter((x) => x && x.some((y) => String(y || '').trim()));
+      let bad = !rows.length;
+      if (/^last3/.test(it[1])) bad = bad || rows.some((x) => !x[0] || (x[2] !== '모름' && !String(x[1] || '').trim()));
+      if (it[1] === 'pat') bad = bad || !rows.some((x) => x.slice(0, 7).includes('O') && x[7] && x[8]);
+      if (bad) miss.push(it[2]);
+    }
+    if (miss.length && !confirm(`아직 안 쓴 꼭 쓸 칸이 있어요:\n${miss.join(', ')}\n\n그래도 엑셀로 저장할까요? (나중에 엑셀을 열어 이어 쓸 수 있어요)`)) return;
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, toSheet(D), '여기에 쓰기');
+    const name = `임금체불_${(D.nameKr || D.nameEn || '이름없음').replace(/[\\/:*?"<>|]/g, ' ').trim()}.xlsx`;
+    const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+    const file = new File([out], name, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    drafts[cur.id].done = true; save();
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {  // 휴대폰: 바로 카톡 등으로 보내기
+      navigator.share({ files: [file], title: name }).catch(() => download(file));
+    } else download(file);
+  }
+  function download(file) {
+    const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name; document.body.appendChild(a); a.click();
+    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
+    toast(`${file.name} 저장 · 카톡으로 팀장에게 보내 주세요`, 4000);
+  }
+  // 엑셀 열어서 이어 쓰기 (다른 휴대폰에서 쓰던 것 · v6 칸 이름으로 되돌림)
+  async function importXlsx(f) {
+    try {
+      const wb = XLSX.read(await f.arrayBuffer(), { type: 'array', cellDates: true });
+      const ws = wb.Sheets[wb.SheetNames.find((n) => /^HU-W/.test(String((wb.Sheets[n].A1 || {}).v || ''))) || wb.SheetNames[0]];
+      const range = XLSX.utils.decode_range(ws['!ref'] || 'A1:M1'), D = {}, v = (a) => { const c = ws[a]; if (!c) return ''; if (c.v instanceof Date) return c.v.toISOString().slice(0, 10); return String(c.v); };
+      const tbl = {}; SPEC.filter((it) => it[0] === 'tbl').forEach((it) => (tbl[it[1]] = colsOf(it[3])));
+      for (let r = 2; r <= range.e.r + 1; r++) {
+        const key = v('A' + r); if (!key) continue;
+        const m = key.match(/^([a-z0-9]+)\.(\d+)$/i);
+        if (key.startsWith('doc.')) D[key] = [v('C' + r), v('E' + r)];
+        else if (m && tbl[m[1]]) (D['t.' + m[1]] = D['t.' + m[1]] || []).push(tbl[m[1]].map((L) => v(L + r)));
+        else D[key] = v('C' + r);
+      }
+      const id = 'd' + Date.now().toString(36);
+      drafts[id] = { at: new Date().toISOString(), data: D }; save(); edit(id);
+      toast('엑셀을 불러왔어요 · 이어서 쓰세요');
+    } catch (e) { alert('엑셀을 열지 못했어요: ' + e.message); }
+  }
+
+  // 사무실 암호 (2026-10-25 팀장님: 맨 처음에 암호를 눌러야 입력 화면) · 소스에는 번호 대신 비교값만 · 창을 닫기 전까지는 다시 안 물음
+  //   공개 페이지라 장난으로 쓰는 것을 막는 정도(담긴 자료는 없음). 암호를 바꾸려면 sha256('hound-wage-form:' + 새 암호)를 PASS에
+  const PASS = '2cc51340d23dea70c8004b3cf0cabd00e09692ccb0224da48f3d2aeb4df4afa5', KOK = 'hwf.ok';
+  async function sha(t) { const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(t)); return [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, '0')).join(''); }
+  function start() {
+    fetch('spec.json', { cache: 'no-cache' }).then((r) => r.json()).then((j) => { SPEC = j.spec; MARK = j.mark; DOCS = j.docs; DOC_HELP = j.docHelp || {}; COND = j.cond || {}; FREE = j.free || []; PROWS = j.phoneRows || {}; REQT = j.reqTbl || []; home(); })
+      .catch(() => { $('#app').innerHTML = '<p>질문 목록을 불러오지 못했어요. 인터넷 연결을 확인해 주세요.</p>'; });
+  }
+  function lock() {
+    $('#st').textContent = '';
+    $('#bar').innerHTML = '';
+    $('#app').innerHTML = `<div class="card" style="margin-top:40px;text-align:center"><div class="lab" style="justify-content:center">사무실 암호</div>
+      <input id="pw" type="password" inputmode="numeric" autocomplete="off" maxlength="12" style="text-align:center;font-size:22px;letter-spacing:6px;max-width:200px">
+      <div style="margin-top:12px"><button class="btn pri" id="pwgo" style="min-width:160px">들어가기</button></div><p class="muted" id="pwmsg" style="margin:10px 0 0"></p></div>`;
+    const go = async () => {
+      if (await sha('hound-wage-form:' + $('#pw').value.trim()) === PASS) { try { sessionStorage.setItem(KOK, '1'); } catch (e) { /* 다음에 다시 물음 */ } start(); }
+      else { $('#pwmsg').textContent = '암호가 맞지 않아요'; $('#pw').value = ''; $('#pw').focus(); }
+    };
+    $('#pwgo').onclick = go;
+    $('#pw').onkeydown = (e) => { if (e.key === 'Enter') go(); };
+    $('#pw').focus();
+  }
+  let ok = false; try { ok = sessionStorage.getItem(KOK) === '1'; } catch (e) { ok = false; }
+  if (ok) start(); else lock();
+  window.addEventListener('pagehide', () => cur && save());
+  window.HWF = { toSheet, get cur() { return cur; } };  // 시험용
+})();
+</script>
+</body>
+</html>
