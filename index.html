@@ -65,7 +65,7 @@ select{width:100%;font:inherit;padding:10px;border:1px solid var(--line);border-
   function condOk(c, D) {
     if (!c) return true;
     let ok = true;
-    if (c.rehire) ok = (D['t.gap'] || []).some((r) => r && r[2] === '퇴사 후 재입사');
+    if (c.rehire) ok = D['q6.gapYN'] !== '없음' && (D['t.gap'] || []).some((r) => r && r[2] === '퇴사 후 재입사');  // 쉰 기간 '없음'이면 예전에 쓴 줄은 안 봄
     else {
       const v = String(D[c.key] ?? '').trim();
       if ('eq' in c) ok = v === c.eq;
@@ -146,7 +146,7 @@ select{width:100%;font:inherit;padding:10px;border:1px solid var(--line);border-
   const ymBack = (iso, n) => { const m = /^(\d{4})-(\d{2})-\d{2}$/.exec(iso || ''); return m ? Array.from({ length: n }, (_, k) => new Date(Date.UTC(+m[1], +m[2] - 1 - (n - 1 - k), 1)).toISOString().slice(0, 7)) : null; };
   const dayBefore = (iso) => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() - 1); return d.toISOString().slice(0, 10); };
   function syncLast3(D) {
-    const g = (D['t.gap'] || []).find((r) => r && r[2] === '퇴사 후 재입사' && /^\d{4}-\d{2}-\d{2}$/.test(r[0] || ''));
+    const g = D['q6.gapYN'] === '없음' ? null : (D['t.gap'] || []).find((r) => r && r[2] === '퇴사 후 재입사' && /^\d{4}-\d{2}-\d{2}$/.test(r[0] || ''));
     const want = { last3: ymBack(D.lastDate, 3), last3a: g ? ymBack(dayBefore(g[0]), 3) : null };
     for (const [tag, ms] of Object.entries(want)) {
       if (!ms) continue;
