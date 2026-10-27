@@ -52,7 +52,7 @@ select{width:100%;font:inherit;padding:10px;border:1px solid var(--line);border-
 <script>
 (() => {
   'use strict';
-  const STAFF = ['찐티닌장', '이설'];  // 작성자 고르기 (직원이 바뀌면 여기)
+  const STAFF = ['찐티닌장', '이설', '이정민'];  // 작성자 고르기 (직원이 바뀌면 여기)
   const KEY = 'hwf.drafts.v1', KSTAFF = 'hwf.staff';
   const $ = (s, el = document) => el.querySelector(s);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
