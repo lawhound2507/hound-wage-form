@@ -5,7 +5,9 @@
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#17171a">
 <title>임금체불 직원 작성</title>
-<!-- 하운드 임금체불 직원 작성 화면 (2026-10-25 팀장님): 휴대폰에서 질문에 답하고 [엑셀로 저장] → 그 엑셀을 카톡으로 팀장에게.
+<!-- 하운드 임금체불 직원 작성 화면 (2026-10-25 팀장님): 휴대폰에서 질문에 답하고 [보내기] → 휴대폰 공유 창에서 카톡 등으로 팀장에게(2026-11-06 편의 시안 2 안 B).
+     원본은 HoundUnpaid web/worker-form 하나, 공개 저장소(hound-wage-form)에는 tools/publish_worker_form.py로 복사.
+     작성자 이름은 spec.json staff(인사관리에서 임금체불 권한이 있는 직원, make_worker_template.py가 넣음).
      질문 목록 = spec.json (tools/make_worker_template.py가 엑셀 양식과 함께 만듦 — 질문은 거기서만 고침).
      적은 내용은 이 휴대폰 안(localStorage)에만 임시저장, 서버로 보내지 않음. 엑셀은 v6 양식과 같은 칸(숨긴 A열 키)이라 임금체불 프로그램이 그대로 불러옴. -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
@@ -52,7 +54,7 @@ select{width:100%;font:inherit;padding:10px;border:1px solid var(--line);border-
 <script>
 (() => {
   'use strict';
-  const STAFF = ['찐티닌장', '이설', '이정민'];  // 작성자 고르기 (직원이 바뀌면 여기)
+  let STAFF = ['찐티닌장', '이설', '이정민'];  // 작성자 고르기: spec.json staff가 있으면 그것(인사관리), 없을 때만 이 목록
   const KEY = 'hwf.drafts.v1', KSTAFF = 'hwf.staff';
   const $ = (s, el = document) => el.querySelector(s);
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -176,7 +178,7 @@ select{width:100%;font:inherit;padding:10px;border:1px solid var(--line);border-
     }
     close();
     $('#app').innerHTML = h;
-    $('#bar').innerHTML = `<button class="btn" id="back">목록</button><button class="btn pri" id="xls">엑셀로 저장</button>`;
+    $('#bar').innerHTML = `<button class="btn" id="back">목록</button><button class="btn pri" id="xls">보내기</button>`;
     $('#back').onclick = () => { save(); home(); };
     $('#xls').onclick = exportXlsx;
     $('#st').textContent = '저장됨 ' + when(drafts[id].at);
@@ -222,7 +224,7 @@ select{width:100%;font:inherit;padding:10px;border:1px solid var(--line);border-
   function save() {
     if (cur) { drafts[cur.id].data = cur.data; drafts[cur.id].at = new Date().toISOString(); }
     const ok = store.set(KEY, drafts);
-    if (cur) $('#st').innerHTML = ok ? `<span class="saved">저장됨 ${when(drafts[cur.id].at)}</span>` : '임시저장 안 됨 (엑셀로 저장해 두세요)';
+    if (cur) $('#st').innerHTML = ok ? `<span class="saved">저장됨 ${when(drafts[cur.id].at)}</span>` : '임시저장 안 됨 (보내기로 엑셀을 받아 두세요)';
   }
   let t0;
   const later = () => { clearTimeout(t0); t0 = setTimeout(save, 400); };
@@ -316,21 +318,21 @@ select{width:100%;font:inherit;padding:10px;border:1px solid var(--line);border-
       if (it[1] === 'pat') bad = bad || !rows.some((x) => x.slice(0, 7).includes('O') && x[7] && x[8]);
       if (bad) miss.push(it[2]);
     }
-    if (miss.length && !confirm(`아직 안 쓴 꼭 쓸 칸이 있어요:\n${miss.join(', ')}\n\n그래도 엑셀로 저장할까요? (나중에 엑셀을 열어 이어 쓸 수 있어요)`)) return;
+    if (miss.length && !confirm(`아직 안 쓴 꼭 쓸 칸이 있어요:\n${miss.join(', ')}\n\n그래도 보낼까요? (나중에 엑셀을 열어 이어 쓸 수 있어요)`)) return;
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, toSheet(D), '여기에 쓰기');
     const name = `임금체불_${(D.nameKr || D.nameEn || '이름없음').replace(/[\\/:*?"<>|]/g, ' ').trim()}.xlsx`;
     const out = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
     const file = new File([out], name, { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     drafts[cur.id].done = true; save();
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {  // 휴대폰: 바로 카톡 등으로 보내기
-      navigator.share({ files: [file], title: name }).catch(() => download(file));
-    } else download(file);
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {  // 휴대폰: 공유 창 → 카톡 '나에게', 팀장 등 (안 B)
+      navigator.share({ files: [file], title: name }).catch((e) => { if (!e || e.name !== 'AbortError') download(file); });  // 공유 창을 닫은 것은 그대로
+    } else download(file);  // 공유가 안 되는 브라우저, PC: 엑셀로 저장
   }
   function download(file) {
     const a = document.createElement('a'); a.href = URL.createObjectURL(file); a.download = file.name; document.body.appendChild(a); a.click();
     setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 2000);
-    toast(`${file.name} 저장 · 카톡으로 팀장에게 보내 주세요`, 4000);
+    toast(`${file.name} 저장했어요. 카톡으로 팀장에게 보내 주세요`, 4000);
   }
   // 엑셀 열어서 이어 쓰기 (다른 휴대폰에서 쓰던 것 · v6 칸 이름으로 되돌림)
   async function importXlsx(f) {
@@ -357,7 +359,7 @@ select{width:100%;font:inherit;padding:10px;border:1px solid var(--line);border-
   const PASS = '2cc51340d23dea70c8004b3cf0cabd00e09692ccb0224da48f3d2aeb4df4afa5', KOK = 'hwf.ok';
   async function sha(t) { const b = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(t)); return [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, '0')).join(''); }
   function start() {
-    fetch('spec.json', { cache: 'no-cache' }).then((r) => r.json()).then((j) => { SPEC = j.spec; MARK = j.mark; DOCS = j.docs; DOC_HELP = j.docHelp || {}; COND = j.cond || {}; FREE = j.free || []; PROWS = j.phoneRows || {}; REQT = j.reqTbl || []; home(); })
+    fetch('spec.json', { cache: 'no-cache' }).then((r) => r.json()).then((j) => { SPEC = j.spec; MARK = j.mark; DOCS = j.docs; DOC_HELP = j.docHelp || {}; COND = j.cond || {}; FREE = j.free || []; if (Array.isArray(j.staff) && j.staff.length) STAFF = j.staff; PROWS = j.phoneRows || {}; REQT = j.reqTbl || []; home(); })
       .catch(() => { $('#app').innerHTML = '<p>질문 목록을 불러오지 못했어요. 인터넷 연결을 확인해 주세요.</p>'; });
   }
   function lock() {
